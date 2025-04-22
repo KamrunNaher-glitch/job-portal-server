@@ -9,7 +9,11 @@ const app = express();
 const port = process.env.PORT || 5000;
 
 app.use(cors({
-  origin: ['http://localhost:5173'],
+  origin: ['http://localhost:5173',
+    'https://job-portal-144b9.web.app',
+    'https://job-portal-144b9.firebaseapp.com'
+
+  ],
   credentials: true
 }));
 app.use(express.json());
@@ -47,15 +51,15 @@ const client = new MongoClient(uri, {
   },
 });
 
-let db; // Store the database connection
+let db; 
 
 // Function to connect to MongoDB (Singleton Approach)
 async function connectDB() {
   if (!db) {
     try {
-      await client.connect();
-      db = client.db("jobPortal");
-      console.log("Connected to MongoDB!");
+      // await client.connect();
+      // db = client.db("jobPortal");
+      // console.log("Connected to MongoDB!");
     } catch (error) {
       console.error("MongoDB connection error:", error);
     }
@@ -70,7 +74,7 @@ app.post('/jwt', async (req, res) => {
   res
     .cookie('token', token, {
     httpOnly: true,
-    secure: false,
+    secure: process.env.NODE_ENV=== 'production'
   })
     .send({ success: true })
 });
@@ -79,33 +83,55 @@ app.post('/jwt', async (req, res) => {
     res
     .clearCookie('token',{
       httpOnly:true,
-      secure: false,
+      secure: process.env.NODE_ENV=== 'production'
     })
     .send({success:true})
   })
 
 
 // Jobs API Route
-app.get('/jobs',   async (req, res) => {
-    console.log('now inside the API callback')
+app.get('/jobs', async (req, res) => {
+  console.log('Inside /jobs API callback');
+
   const email = req.query.email;
+  const sort = req.query.sort;
+  const search = req.query?.search;
+
   let query = {};
+  let sortQuery = {};
+
   if (email) {
-    query = { hr_email: email }
+      query.hr_email = email; 
   }
+
+  if (search) {
+      query.location = { $regex: search, $options: "i" }; 
+  }
+
+  if (sort === "true") {  // Ensure sorting is correctly applied
+      sortQuery = { "salaryRange.min": -1 };
+  }
+
+  console.log("Final Query:", query);
+
   try {
-    const db = await connectDB();
-    if (!db) {
-      return res.status(500).send("Database connection failed");
-    }
-    const jobsCollection = db.collection('jobs');
-    const jobs = await jobsCollection.find(query).toArray();
-    res.send(jobs);
+      const db = await connectDB();
+      if (!db) {
+          return res.status(500).send("Database connection failed");
+      }
+
+      const jobsCollection = db.collection('jobs');
+      const cursor = jobsCollection.find(query).sort(sortQuery);
+      const result = await cursor.toArray();
+
+      res.send(result);
   } catch (error) {
-    console.error("Error fetching jobs:", error);
-    res.status(500).send("Internal Server Error");
+      console.error("Error fetching jobs:", error);
+      res.status(500).send("Internal Server Error");
   }
 });
+
+
 
 app.get('/jobs/:id', async (req, res) => {
 
